@@ -1,102 +1,119 @@
-(ns brickbreaker.physics)
+(ns brickbreaker.physics
+  (:require
+    [brickbreaker.constants :as constants]))
 
 (defn clamp [value low high]
   (max low (min high value)))
-
-(defn move-paddle [state action]
-  (let [direction (case action
-                    :action/left -1
-                    :action/right 1
-                    :action/none 0)
-        half-width (/ (:paddle/width state) 2)]
-    (update state :paddle/x
-            (fn [x]
-              (clamp (+ x (* direction (:paddle/speed state)))
-                     half-width
-                     (- (:world/width state) half-width))))))
-
-(defn brick-at
-  "Returns [column row] of the alive brick containing point, or nil."
-  [state x y]
-  (let [column (int (Math/floor (/ x (:bricks/width state))))
-        row (int (Math/floor (/ (- y (:bricks/top state)) (:bricks/height state))))
-        cell [column row]]
-    (when (contains? (:bricks/alive state) cell)
-      cell)))
-
-(defn break-brick [state cell]
-  (-> state
-      (update :bricks/alive disj cell)
-      (update :game/bricks-broken inc)))
 
 (defn sign [value]
   (if (neg? value)
     -1
     1))
 
-(defn move-ball-x [state]
-  (let [{:ball/keys [x y vx radius]} state
-        next-x (+ x vx)
-        cell (brick-at state (+ next-x (* (sign vx) radius)) y)]
+(defn absolute [value]
+  (Math/abs (double value)))
+
+(defn move-paddle [state action]
+  (let [{:constant/keys [paddle-width paddle-speed world-width]} constants/constants
+        direction (case action
+                    :action/left -1
+                    :action/right 1
+                    :action/none 0)
+        half-width (/ paddle-width 2)]
+    (update-in state [:state/paddle-location :location/x]
+               (fn [x]
+                 (clamp (+ x (* direction paddle-speed))
+                        half-width
+                        (- world-width half-width))))))
+
+(defn brick-at
+  "Returns [column row] of the alive brick containing the point, or nil."
+  [{:state/keys [bricks-alive]} {:location/keys [x y]}]
+  (let [{:constant/keys [brick-width brick-height bricks-top]} constants/constants
+        cell [(int (Math/floor (/ x brick-width)))
+              (int (Math/floor (/ (- y bricks-top) brick-height)))]]
+    (when (contains? bricks-alive cell)
+      cell)))
+
+(defn break-brick [state cell]
+  (-> state
+      (update :state/bricks-alive disj cell)
+      (update :state/bricks-broken inc)))
+
+(defn move-ball-x [{:state/keys [ball-location ball-velocity] :as state}]
+  (let [{:constant/keys [ball-radius world-width]} constants/constants
+        {:location/keys [x y]} ball-location
+        velocity-x (:velocity/x ball-velocity)
+        next-x (+ x velocity-x)
+        cell (brick-at state {:location/x (+ next-x (* (sign velocity-x) ball-radius))
+                              :location/y y})]
     (cond
       cell
       (-> state
           (break-brick cell)
-          (update :ball/vx -))
+          (update-in [:state/ball-velocity :velocity/x] -))
 
-      (< (- next-x radius) 0)
-      (assoc state
-             :ball/x radius
-             :ball/vx (Math/abs (double vx)))
+      (< (- next-x ball-radius) 0)
+      (-> state
+          (assoc-in [:state/ball-location :location/x] ball-radius)
+          (assoc-in [:state/ball-velocity :velocity/x] (absolute velocity-x)))
 
-      (> (+ next-x radius) (:world/width state))
-      (assoc state
-             :ball/x (- (:world/width state) radius)
-             :ball/vx (- (Math/abs (double vx))))
+      (> (+ next-x ball-radius) world-width)
+      (-> state
+          (assoc-in [:state/ball-location :location/x] (- world-width ball-radius))
+          (assoc-in [:state/ball-velocity :velocity/x] (- (absolute velocity-x))))
 
       :else
-      (assoc state :ball/x next-x))))
+      (assoc-in state [:state/ball-location :location/x] next-x))))
 
-(defn hits-paddle? [state next-y]
-  (let [{:ball/keys [x y vy radius]} state
-        {:paddle/keys [width]} state
-        paddle-top (- (:paddle/y state) (/ (:paddle/height state) 2))
-        half-width (/ width 2)]
+(defn paddle-top [{:state/keys [paddle-location]}]
+  (- (:location/y paddle-location)
+     (/ (:constant/paddle-height constants/constants) 2)))
+
+(defn hits-paddle? [{:state/keys [ball-location ball-velocity paddle-location] :as state} next-y]
+  (let [{:constant/keys [ball-radius paddle-width]} constants/constants
+        {:location/keys [x y]} ball-location
+        top (paddle-top state)
+        half-width (/ paddle-width 2)
+        paddle-x (:location/x paddle-location)]
     (and
-      (pos? vy)
-      (<= (+ y radius) paddle-top)
-      (> (+ next-y radius) paddle-top)
-      (<= (- (:paddle/x state) half-width) x (+ (:paddle/x state) half-width)))))
+      (pos? (:velocity/y ball-velocity))
+      (<= (+ y ball-radius) top)
+      (> (+ next-y ball-radius) top)
+      (<= (- paddle-x half-width) x (+ paddle-x half-width)))))
 
-(defn bounce-off-paddle [state]
-  (let [offset (/ (- (:ball/x state) (:paddle/x state))
-                  (/ (:paddle/width state) 2))
-        paddle-top (- (:paddle/y state) (/ (:paddle/height state) 2))]
-    (assoc state
-           :ball/y (- paddle-top (:ball/radius state))
-           :ball/vy (- (Math/abs (double (:ball/vy state))))
-           :ball/vx (* offset (:ball/max-vx state)))))
+(defn bounce-off-paddle [{:state/keys [ball-location ball-velocity paddle-location] :as state}]
+  (let [{:constant/keys [ball-radius paddle-width ball-max-velocity-x]} constants/constants
+        offset (/ (- (:location/x ball-location) (:location/x paddle-location))
+                  (/ paddle-width 2))]
+    (-> state
+        (assoc-in [:state/ball-location :location/y] (- (paddle-top state) ball-radius))
+        (assoc :state/ball-velocity {:velocity/x (* offset ball-max-velocity-x)
+                                     :velocity/y (- (absolute (:velocity/y ball-velocity)))}))))
 
-(defn move-ball-y [state]
-  (let [{:ball/keys [x y vy radius]} state
-        next-y (+ y vy)
-        cell (brick-at state x (+ next-y (* (sign vy) radius)))]
+(defn move-ball-y [{:state/keys [ball-location ball-velocity] :as state}]
+  (let [{:constant/keys [ball-radius]} constants/constants
+        {:location/keys [x y]} ball-location
+        velocity-y (:velocity/y ball-velocity)
+        next-y (+ y velocity-y)
+        cell (brick-at state {:location/x x
+                              :location/y (+ next-y (* (sign velocity-y) ball-radius))})]
     (cond
       cell
       (-> state
           (break-brick cell)
-          (update :ball/vy -))
+          (update-in [:state/ball-velocity :velocity/y] -))
 
       (hits-paddle? state next-y)
       (bounce-off-paddle state)
 
-      (< (- next-y radius) 0)
-      (assoc state
-             :ball/y radius
-             :ball/vy (Math/abs (double vy)))
+      (< (- next-y ball-radius) 0)
+      (-> state
+          (assoc-in [:state/ball-location :location/y] ball-radius)
+          (assoc-in [:state/ball-velocity :velocity/y] (absolute velocity-y)))
 
       :else
-      (assoc state :ball/y next-y))))
+      (assoc-in state [:state/ball-location :location/y] next-y))))
 
 (defn move-ball [state]
   (-> state

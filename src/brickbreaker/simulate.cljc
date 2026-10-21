@@ -1,6 +1,6 @@
 (ns brickbreaker.simulate
   (:require
-    [brickbreaker.core :as core]))
+    [brickbreaker.game :as game]))
 
 (defn play-game
   "Returns the vector of states, from start state to game over (or max-ticks)."
@@ -8,21 +8,21 @@
   (loop [states [state]]
     (let [current (peek states)]
       (if (or
-            (core/game-over? current)
-            (>= (:game/tick current) max-ticks))
+            (game/game-over? current)
+            (>= (:state/game-tick current) max-ticks))
         states
-        (recur (conj states (core/step current (decide current))))))))
+        (recur (conj states (game/step current (decide current))))))))
 
-(defn follow-ball [state]
-  (let [difference (- (:ball/x state) (:paddle/x state))]
+(defn follow-ball [{:state/keys [ball-location paddle-location]}]
+  (let [difference (- (:location/x ball-location) (:location/x paddle-location))]
     (cond
       (< difference -1) :action/left
       (> difference 1) :action/right
       :else :action/none)))
 
 (comment
-  (let [states (play-game {:state (core/new-game {:seed 42})
+  (let [states (play-game {:state (game/new-game {:seed 42})
                            :decide follow-ball
                            :max-ticks 100000})
         final (peek states)]
-    (select-keys final [:game/tick :game/status :game/bricks-broken])))
+    (select-keys final [:state/game-tick :state/game-status :state/bricks-broken])))

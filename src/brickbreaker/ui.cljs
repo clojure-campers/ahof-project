@@ -2,10 +2,11 @@
   (:require
     [reagent.core :as r]
     [reagent.dom.client :as rdc]
-    [brickbreaker.core :as core]))
+    [brickbreaker.constants :as constants]
+    [brickbreaker.game :as game]))
 
 (defonce game-state
-  (r/atom (core/new-game {:seed (rand-int 1000000)})))
+  (r/atom (game/new-game {:seed (rand-int 1000000)})))
 
 (defonce held-keys
   (atom #{}))
@@ -17,54 +18,56 @@
       (and (keys "ArrowRight") (not (keys "ArrowLeft"))) :action/right
       :else :action/none)))
 
-(defn bricks-view [state]
-  [:g
-   (for [[column row] (:bricks/alive state)]
-     ^{:key (str column "-" row)}
-     [:rect {:x (* column (:bricks/width state))
-             :y (+ (:bricks/top state) (* row (:bricks/height state)))
-             :width (:bricks/width state)
-             :height (:bricks/height state)
-             :fill (str "hsl(" (* row 36) ", 70%, 55%)")
-             :stroke "#111"
-             :stroke-width 0.3}])])
+(defn bricks-view [{:state/keys [bricks-alive]}]
+  (let [{:constant/keys [brick-width brick-height bricks-top]} constants/constants]
+    [:g
+     (for [[column row] bricks-alive]
+       ^{:key (str column "-" row)}
+       [:rect {:x (* column brick-width)
+               :y (+ bricks-top (* row brick-height))
+               :width brick-width
+               :height brick-height
+               :fill (str "hsl(" (* row 36) ", 70%, 55%)")
+               :stroke "#111"
+               :stroke-width 0.3}])]))
 
 (defn game-view []
-  (let [state @game-state]
+  (let [{:state/keys [game-tick game-status paddle-location ball-location] :as state} @game-state
+        {:constant/keys [world-width world-height paddle-width paddle-height ball-radius]} constants/constants]
     [:div {:style {:font-family "sans-serif"
                    :color "#eee"
                    :background "#111"
                    :min-height "100vh"
                    :padding 16}}
-     [:div "Score: " (core/score state)
-      " | Tick: " (:game/tick state)
-      " | " (name (:game/status state))]
-     [:svg {:view-box (str "0 0 " (:world/width state) " " (:world/height state))
+     [:div "Score: " (game/score state)
+      " | Tick: " game-tick
+      " | " (name game-status)]
+     [:svg {:view-box (str "0 0 " world-width " " world-height)
             :style {:width "min(90vw, 80vh)"
                     :background "#222"
                     :display "block"}}
       [bricks-view state]
-      [:rect {:x (- (:paddle/x state) (/ (:paddle/width state) 2))
-              :y (- (:paddle/y state) (/ (:paddle/height state) 2))
-              :width (:paddle/width state)
-              :height (:paddle/height state)
+      [:rect {:x (- (:location/x paddle-location) (/ paddle-width 2))
+              :y (- (:location/y paddle-location) (/ paddle-height 2))
+              :width paddle-width
+              :height paddle-height
               :fill "#eee"}]
-      [:circle {:cx (:ball/x state)
-                :cy (:ball/y state)
-                :r (:ball/radius state)
+      [:circle {:cx (:location/x ball-location)
+                :cy (:location/y ball-location)
+                :r ball-radius
                 :fill "#fff"}]]
      [:div "Arrow keys move. Space starts a new game."]]))
 
 (defn on-key-down! [event]
   (if (= " " (.-key event))
-    (reset! game-state (core/new-game {:seed (rand-int 1000000)}))
+    (reset! game-state (game/new-game {:seed (rand-int 1000000)}))
     (swap! held-keys conj (.-key event))))
 
 (defn on-key-up! [event]
   (swap! held-keys disj (.-key event)))
 
 (defn tick! []
-  (swap! game-state core/step (current-action))
+  (swap! game-state game/step (current-action))
   (js/requestAnimationFrame tick!))
 
 (defonce root

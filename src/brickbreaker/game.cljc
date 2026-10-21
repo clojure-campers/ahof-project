@@ -1,5 +1,6 @@
-(ns brickbreaker.core
+(ns brickbreaker.game
   (:require
+    [brickbreaker.constants :as constants]
     [brickbreaker.physics :as physics]
     [brickbreaker.random :as random]))
 
@@ -10,50 +11,35 @@
   [{:keys [seed fill-percent]
     :or {seed 42
          fill-percent 60}}]
-  {:game/tick 0
-   :game/status :status/playing
-   :game/seed seed ;; fixed
-   :game/bricks-broken 0
+  (let [{:constant/keys [brick-columns brick-rows]} constants/constants]
+    {:state/game-tick 0
+     :state/game-status :status/playing
+     :state/bricks-broken 0
+     :state/paddle-location {:location/x 50
+                             :location/y 95}
+     :state/ball-location {:location/x 50
+                           :location/y 90}
+     :state/ball-velocity {:velocity/x 0.7
+                           :velocity/y -1}
+     :state/bricks-alive (random/random-bricks {:seed seed
+                                                :columns brick-columns
+                                                :rows brick-rows
+                                                :fill-percent fill-percent})}))
 
-   :world/width 100 ;; fixed
-   :world/height 100 ;; fixed
+(defn game-over? [{:state/keys [game-status]}]
+  (not= :status/playing game-status))
 
-   :paddle/x 50
-   :paddle/y 95
-   :paddle/width 16 ;; fixed
-   :paddle/height 2 ;; fixed
-   :paddle/speed 2
+(defn update-status [{:state/keys [bricks-alive ball-location] :as state}]
+  (let [{:constant/keys [ball-radius world-height]} constants/constants]
+    (cond
+      (empty? bricks-alive)
+      (assoc state :state/game-status :status/won)
 
-   :ball/x 50
-   :ball/y 90
-   :ball/vx 0.7
-   :ball/vy -1
-   :ball/max-vx 1.5 ;; fixed
-   :ball/radius 1  ;; fixed
+      (> (- (:location/y ball-location) ball-radius) world-height)
+      (assoc state :state/game-status :status/lost)
 
-   :bricks/columns 10 ;; fixed
-   :bricks/rows 10  ;; fixed
-   :bricks/width 10  ;; fixed
-   :bricks/height 4 ;; fixed
-   :bricks/top 10  ;; fixed
-   :bricks/alive (random/random-bricks {:seed seed
-                                        :columns 10
-                                        :rows 10
-                                        :fill-percent fill-percent})})
-
-(defn game-over? [state]
-  (not= :status/playing (:game/status state)))
-
-(defn update-status [state]
-  (cond
-    (empty? (:bricks/alive state))
-    (assoc state :game/status :status/won)
-
-    (> (- (:ball/y state) (:ball/radius state)) (:world/height state))
-    (assoc state :game/status :status/lost)
-
-    :else
-    state))
+      :else
+      state)))
 
 (defn step [state action]
   (if (game-over? state)
@@ -61,10 +47,10 @@
     (-> state
         (physics/move-paddle action)
         physics/move-ball
-        (update :game/tick inc)
+        (update :state/game-tick inc)
         update-status)))
 
-(defn score [state]
-  (:game/bricks-broken state))
+(defn score [{:state/keys [bricks-broken]}]
+  bricks-broken)
 
 #_(step (new-game {:seed 1}) :action/left)
