@@ -82,7 +82,8 @@
       (> (+ next-y ball-radius) top)
       (<= (- paddle-x half-width) x (+ paddle-x half-width)))))
 
-(defn bounce-off-paddle [{:state/keys [ball-location ball-velocity paddle-location] :as state}]
+(defn bounce-off-paddle
+  [{:state/keys [ball-location ball-velocity paddle-location] :as state}]
   (let [{:constant/keys [ball-radius paddle-width ball-max-velocity-x]} constants/constants
         offset (/ (- (:location/x ball-location) (:location/x paddle-location))
                   (/ paddle-width 2))]
@@ -91,7 +92,8 @@
         (assoc :state/ball-velocity {:velocity/x (* offset ball-max-velocity-x)
                                      :velocity/y (- (absolute (:velocity/y ball-velocity)))}))))
 
-(defn move-ball-y [{:state/keys [ball-location ball-velocity] :as state}]
+(defn move-ball-y
+  [{:state/keys [ball-location ball-velocity] :as state}]
   (let [{:constant/keys [ball-radius]} constants/constants
         {:location/keys [x y]} ball-location
         velocity-y (:velocity/y ball-velocity)
